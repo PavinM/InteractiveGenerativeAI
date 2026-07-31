@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Settings as SettingsIcon, 
@@ -8,7 +8,14 @@ import {
   Server,
   Sun,
   Moon,
-  Palette
+  Palette,
+  Key,
+  Zap,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  ShieldCheck,
+  Trash2
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -21,10 +28,35 @@ export default function SettingsModal({
   theme,
   onToggleTheme 
 }) {
-  const [activeTab, setActiveTab] = useState('appearance');
+  const [activeTab, setActiveTab] = useState('groq');
   const [exported, setExported] = useState(false);
+  const [groqKeyInput, setGroqKeyInput] = useState(() => {
+    return settings?.groqApiKey || localStorage.getItem('groq_api_key') || '';
+  });
+  const [showKey, setShowKey] = useState(false);
+  const [keySavedMessage, setKeySavedMessage] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setGroqKeyInput(settings?.groqApiKey || localStorage.getItem('groq_api_key') || '');
+    }
+  }, [isOpen, settings]);
 
   if (!isOpen) return null;
+
+  const handleSaveGroqKey = () => {
+    const trimmed = groqKeyInput.trim();
+    localStorage.setItem('groq_api_key', trimmed);
+    onUpdateSettings({ groqApiKey: trimmed });
+    setKeySavedMessage(true);
+    setTimeout(() => setKeySavedMessage(false), 2500);
+  };
+
+  const handleClearGroqKey = () => {
+    localStorage.removeItem('groq_api_key');
+    setGroqKeyInput('');
+    onUpdateSettings({ groqApiKey: '' });
+  };
 
   const handleExportJSON = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(chats, null, 2));
@@ -38,6 +70,8 @@ export default function SettingsModal({
     setTimeout(() => setExported(false), 2000);
   };
 
+  const isKeySaved = Boolean(settings?.groqApiKey || localStorage.getItem('groq_api_key'));
+
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
       <motion.div 
@@ -48,12 +82,12 @@ export default function SettingsModal({
         {/* Header */}
         <div className="p-5 border-b dark:border-white/10 border-slate-200 flex items-center justify-between dark:bg-[#16181F] bg-slate-50">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-500">
-              <SettingsIcon className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-xl bg-orange-600/20 border border-orange-500/30 flex items-center justify-center text-orange-500">
+              <Zap className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-bold text-base dark:text-white text-slate-900">TinyLlama Settings</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Manage appearance, model parameters, exports & workspace preferences</p>
+              <h3 className="font-bold text-base dark:text-white text-slate-900">Deku AI & Groq Settings</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Configure Groq API key, model architecture, theme & export logs</p>
             </div>
           </div>
           <button 
@@ -65,8 +99,9 @@ export default function SettingsModal({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b dark:border-white/10 border-slate-200 px-5 dark:bg-[#0F1014] bg-slate-100">
+        <div className="flex border-b dark:border-white/10 border-slate-200 px-5 dark:bg-[#0F1014] bg-slate-100 overflow-x-auto">
           {[
+            { id: 'groq', label: '⚡ Groq API Key' },
             { id: 'appearance', label: 'Appearance' },
             { id: 'general', label: 'General' },
             { id: 'model', label: 'Model Guidelines' },
@@ -76,9 +111,9 @@ export default function SettingsModal({
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`
-                py-3 px-4 text-xs font-semibold uppercase tracking-wider border-b-2 transition-colors cursor-pointer
+                py-3 px-4 text-xs font-semibold uppercase tracking-wider border-b-2 transition-colors cursor-pointer whitespace-nowrap
                 ${activeTab === tab.id 
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-bold' 
+                  ? 'border-orange-500 text-orange-600 dark:text-orange-400 font-bold' 
                   : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-slate-900 dark:hover:text-gray-200'}
               `}
             >
@@ -89,6 +124,119 @@ export default function SettingsModal({
 
         {/* Modal Content */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+          {/* Groq Cloud API Key Tab */}
+          {activeTab === 'groq' && (
+            <div className="space-y-6">
+              {/* Header card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-transparent border border-orange-500/20 flex items-start gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-orange-500/20 border border-orange-500/30 flex items-center justify-center text-orange-500 flex-shrink-0">
+                  <Zap className="w-5 h-5 animate-pulse" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-sm dark:text-white text-slate-900">Groq Cloud LPU Hardware Acceleration</h4>
+                    {isKeySaved ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold text-[10px]">
+                        <ShieldCheck className="w-3 h-3" /> Key Active
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold text-[10px]">
+                        Key Not Set
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-gray-500 dark:text-gray-400 mt-1 text-[11px]">
+                    Paste your Groq API Key to run <strong>Llama 3.3 70B</strong>, <strong>Llama 3.1 8B</strong>, and <strong>Mixtral 8x7B</strong> at <strong>~500+ tokens/sec</strong> ultra speed directly from your browser!
+                  </p>
+                </div>
+              </div>
+
+              {/* Input Form */}
+              <div className="space-y-3">
+                <label className="block text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Key className="w-4 h-4 text-orange-500" /> Enter Groq API Key
+                  </span>
+                  <a 
+                    href="https://console.groq.com/keys" 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="text-orange-500 hover:underline flex items-center gap-1 text-[11px]"
+                  >
+                    Get Free Key at console.groq.com <ExternalLink className="w-3 h-3" />
+                  </a>
+                </label>
+
+                <div className="relative flex items-center">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={groqKeyInput}
+                    onChange={(e) => setGroqKeyInput(e.target.value)}
+                    placeholder="gsk_..."
+                    className="w-full pl-4 pr-24 py-3 rounded-xl dark:bg-[#090A0D] bg-slate-100 border dark:border-white/15 border-slate-300 dark:text-white text-slate-900 font-mono text-xs focus:outline-none focus:border-orange-500 transition-colors shadow-inner"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-3 p-1.5 text-gray-400 hover:text-white transition-colors"
+                    title={showKey ? 'Hide key' : 'Show key'}
+                  >
+                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                {/* Actions Bar */}
+                <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveGroqKey}
+                      className="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold flex items-center gap-2 shadow-lg shadow-orange-600/20 cursor-pointer transition-all active:scale-95"
+                    >
+                      {keySavedMessage ? <Check className="w-4 h-4 text-emerald-300" /> : <Check className="w-4 h-4" />}
+                      <span>{keySavedMessage ? 'Saved to Browser!' : 'Save Groq Key'}</span>
+                    </button>
+
+                    {groqKeyInput && (
+                      <button
+                        type="button"
+                        onClick={handleClearGroqKey}
+                        className="px-3 py-2 rounded-xl dark:bg-white/5 bg-slate-200 hover:bg-red-500/20 text-gray-400 hover:text-red-400 font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Clear
+                      </button>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                    🔒 Key stored securely in browser localStorage only.
+                  </p>
+                </div>
+              </div>
+
+              {/* Supported Models Info */}
+              <div className="p-4 rounded-xl dark:bg-white/5 bg-slate-50 border dark:border-white/5 border-slate-200 space-y-2">
+                <h5 className="font-bold text-xs dark:text-white text-slate-900 flex items-center gap-2">
+                  <Zap className="w-3.5 h-3.5 text-orange-500" /> Groq Cloud Models Supported
+                </h5>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
+                  <div className="p-2.5 rounded-lg dark:bg-black/40 bg-white border dark:border-white/5 border-slate-200">
+                    <div className="font-bold text-orange-400">Llama 3.3 70B</div>
+                    <div className="text-gray-400 mt-0.5">320 tok/s • Reasoning</div>
+                  </div>
+                  <div className="p-2.5 rounded-lg dark:bg-black/40 bg-white border dark:border-white/5 border-slate-200">
+                    <div className="font-bold text-emerald-400">Llama 3.1 8B</div>
+                    <div className="text-gray-400 mt-0.5">560 tok/s • Instant</div>
+                  </div>
+                  <div className="p-2.5 rounded-lg dark:bg-black/40 bg-white border dark:border-white/5 border-slate-200">
+                    <div className="font-bold text-blue-400">Mixtral 8x7B</div>
+                    <div className="text-gray-400 mt-0.5">480 tok/s • MoE</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Appearance Tab */}
           {activeTab === 'appearance' && (
             <div className="space-y-6">
@@ -174,16 +322,16 @@ export default function SettingsModal({
               <div className="p-4 rounded-xl dark:bg-white/5 bg-slate-50 border dark:border-white/5 border-slate-200 space-y-3">
                 <div className="flex items-center gap-2 dark:text-white text-slate-900 font-bold text-sm">
                   <Server className="w-4 h-4 text-emerald-500" />
-                  <span>PyTorch Model Execution Target</span>
+                  <span>PyTorch / Hardware Inference Target</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div className="p-3 rounded-xl bg-blue-600/20 border border-blue-500/40 text-blue-600 dark:text-blue-200 font-medium">
-                    <div className="font-bold dark:text-white text-slate-900 mb-1">Local Direct PyTorch</div>
-                    <span>CUDA GPU Enabled (v1.1B v1.0)</span>
+                  <div className="p-3 rounded-xl bg-orange-600/20 border border-orange-500/40 text-orange-600 dark:text-orange-200 font-medium">
+                    <div className="font-bold dark:text-white text-slate-900 mb-1">Groq LPU Hardware</div>
+                    <span>Cloud API (~500 tok/s)</span>
                   </div>
-                  <div className="p-3 rounded-xl dark:bg-white/5 bg-slate-200 border dark:border-white/5 border-slate-300 text-gray-500 font-medium opacity-60">
-                    <div className="font-bold text-slate-700 dark:text-gray-300 mb-1">Remote API Server</div>
-                    <span>http://localhost:8000/v1</span>
+                  <div className="p-3 rounded-xl dark:bg-white/5 bg-slate-200 border dark:border-white/5 border-slate-300 text-gray-500 font-medium">
+                    <div className="font-bold text-slate-700 dark:text-gray-300 mb-1">Local Direct PyTorch</div>
+                    <span>ResNet-50 / Ollama</span>
                   </div>
                 </div>
               </div>
@@ -194,7 +342,7 @@ export default function SettingsModal({
             <div className="space-y-4">
               <div className="font-bold text-sm dark:text-white text-slate-900 mb-2">Model System Guidelines</div>
               <p className="text-gray-500 dark:text-gray-400 leading-relaxed">
-                TinyLlama operates under strict rules defined in your python execution loop:
+                Deku AI operates under strict system rules and leverages Groq LPUs or PyTorch models:
               </p>
               <ul className="list-disc pl-5 space-y-1 text-slate-700 dark:text-gray-300">
                 <li>Answers basic & advanced questions clearly.</li>
@@ -232,7 +380,7 @@ export default function SettingsModal({
         <div className="p-4 border-t dark:border-white/10 border-slate-200 dark:bg-[#16181F] bg-slate-100 flex justify-end">
           <button 
             onClick={onClose}
-            className="py-2 px-5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-md cursor-pointer"
+            className="py-2 px-5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-semibold text-xs shadow-md cursor-pointer"
           >
             Done
           </button>
@@ -241,3 +389,4 @@ export default function SettingsModal({
     </div>
   );
 }
+

@@ -1,6 +1,6 @@
-// Deku AI Real-Time Integration Engine
+// Deku AI Real-Time Integration Engine & Groq Cloud API Integration
 
-export const DEFAULT_SYSTEM_PROMPT = `You are Deku AI, a helpful and intelligent local AI assistant.
+export const DEFAULT_SYSTEM_PROMPT = `You are Deku AI, a helpful and intelligent AI assistant.
 
 Rules:
 - Answer clearly and politely.
@@ -9,12 +9,67 @@ Rules:
 - Keep answers structured and clean.`;
 
 export const MODELS = [
-  { id: 'Deku-1.1B-Chat-v1.0', name: 'Deku 1.1B Chat (Default)', speed: '52 tok/s', vram: '1.2 GB', description: 'Optimized for fast interactive chat & coding.' },
-  { id: 'Deku-1.1B-Instruct', name: 'Deku 1.1B Instruct', speed: '58 tok/s', vram: '1.1 GB', description: 'Fine-tuned for strict instruction following.' },
-  { id: 'Deku-1.1B-Fast', name: 'Deku 1.1B Fast (FP16)', speed: '78 tok/s', vram: '0.9 GB', description: 'Ultra-low latency lightweight execution.' },
+  { id: 'llama-3.3-70b-versatile', provider: 'groq', name: 'Groq Llama 3.3 70B (Recommended)', speed: '320 tok/s', vram: 'Groq LPU', description: 'Ultra-fast 70B parameter model on Groq Cloud.' },
+  { id: 'llama-3.1-8b-instant', provider: 'groq', name: 'Groq Llama 3.1 8B Instant', speed: '560 tok/s', vram: 'Groq LPU', description: 'Blazing fast instant response model on Groq Cloud.' },
+  { id: 'mixtral-8x7b-32768', provider: 'groq', name: 'Groq Mixtral 8x7B', speed: '480 tok/s', vram: 'Groq LPU', description: 'High capability mixture-of-experts model.' },
+  { id: 'Deku-1.1B-Chat-v1.0', provider: 'local', name: 'Deku 1.1B Chat (Local / Fallback)', speed: '52 tok/s', vram: '1.2 GB', description: 'Optimized for fast interactive chat & coding.' },
+  { id: 'Deku-1.1B-Instruct', provider: 'local', name: 'Deku 1.1B Instruct', speed: '58 tok/s', vram: '1.1 GB', description: 'Fine-tuned for strict instruction following.' },
+  { id: 'Deku-1.1B-Fast', provider: 'local', name: 'Deku 1.1B Fast (FP16)', speed: '78 tok/s', vram: '0.9 GB', description: 'Ultra-low latency lightweight execution.' },
 ];
 
 export async function generateResponse({ prompt, image, history, settings, onChunk, onComplete }) {
+  const groqApiKey = (settings?.groqApiKey || localStorage.getItem('groq_api_key') || '').trim();
+  const selectedModelId = settings?.selectedModel || 'llama-3.3-70b-versatile';
+  const selectedModelObj = MODELS.find(m => m.id === selectedModelId) || MODELS[0];
+
+  // If user selected a Groq model or has a Groq API key set, route through Groq Cloud API
+  if (groqApiKey && (selectedModelObj.provider === 'groq' || groqApiKey.length > 5)) {
+    try {
+      return await fetchGroqResponse({
+        prompt,
+        image,
+        history,
+        settings,
+        groqApiKey,
+        modelId: selectedModelId,
+        onChunk,
+        onComplete
+      });
+    } catch (err) {
+      console.warn("Groq API execution warning:", err);
+      // Fallback to local / simulation if Groq request fails
+      if (onChunk) {
+        onChunk({
+          text: `⚠️ **Groq API Error**: ${err.message}\n\n*Falling back to local Deku AI engine...*\n\n`,
+          isDone: false,
+          stats: { tokens: 10, tokensPerSec: '0.0', responseTimeMs: 100 }
+        });
+      }
+    }
+  }
+
+  // If user selected Groq model but hasn't entered an API Key
+  if (selectedModelObj.provider === 'groq' && !groqApiKey) {
+    const errorMsg = `⚠️ **Groq API Key Required**\n\nYou selected **${selectedModelObj.name}**, but no Groq API Key was found.\n\n### How to fix:\n1. Click **Settings** (⚙️) in top right or sidebar.\n2. Go to the **Groq API Key** tab.\n3. Paste your free Groq key (\`gsk_...\`) and click **Save Key**.\n\n*Get a free instant key at [console.groq.com](https://console.groq.com/keys).*`;
+    
+    if (onChunk) {
+      onChunk({
+        text: errorMsg,
+        isDone: true,
+        stats: { tokens: 30, tokensPerSec: '0.0', responseTimeMs: 50 }
+      });
+    }
+    if (onComplete) {
+      onComplete({
+        text: errorMsg,
+        isDone: true,
+        stats: { tokens: 30, tokensPerSec: '0.0', responseTimeMs: 50 }
+      });
+    }
+    return errorMsg;
+  }
+
+  // Default Local / Backend / Fallback Execution
   let fullResponseText = "";
   let responseStats = {
     tokens: 0,
@@ -23,7 +78,6 @@ export async function generateResponse({ prompt, image, history, settings, onChu
   };
 
   try {
-    // Call Python FastAPI backend server (/api/chat)
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -33,9 +87,7 @@ export async function generateResponse({ prompt, image, history, settings, onChu
     if (res.ok) {
       const data = await res.json();
       fullResponseText = data.text;
-      if (data.stats) {
-        responseStats = data.stats;
-      }
+      if (data.stats) responseStats = data.stats;
     } else {
       throw new Error(`Server status ${res.status}`);
     }
@@ -68,7 +120,6 @@ export async function generateResponse({ prompt, image, history, settings, onChu
       });
     }
 
-    // ~18ms delay per word for smooth token streaming
     await new Promise(res => setTimeout(res, 18));
   }
 
@@ -89,6 +140,125 @@ export async function generateResponse({ prompt, image, history, settings, onChu
   return fullResponseText;
 }
 
+/**
+ * Executes streaming chat completions directly via Groq API
+ */
+async function fetchGroqResponse({ prompt, image, history, settings, groqApiKey, modelId, onChunk, onComplete }) {
+  const systemPrompt = settings?.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+  const messages = [
+    { role: 'system', content: systemPrompt }
+  ];
+
+  if (history && Array.isArray(history)) {
+    history.forEach(m => {
+      if (m.role && m.content) {
+        messages.push({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: m.content
+        });
+      }
+    });
+  }
+
+  let finalPrompt = prompt;
+  if (image) {
+    finalPrompt += "\n\n[Note: User attached an image to this message]";
+  }
+  messages.push({ role: 'user', content: finalPrompt });
+
+  const targetModel = modelId && (modelId.includes('llama') || modelId.includes('mixtral')) 
+    ? modelId 
+    : 'llama-3.3-70b-versatile';
+
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${groqApiKey.trim()}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: targetModel,
+      messages: messages,
+      temperature: settings?.temperature ?? 0.7,
+      max_tokens: settings?.maxTokens ?? 2048,
+      top_p: settings?.topP ?? 0.9,
+      stream: true
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const errorDetails = errorData.error?.message || `HTTP ${response.status} ${response.statusText}`;
+    throw new Error(errorDetails);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let fullText = '';
+  const startTime = Date.now();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('data: ')) {
+        const dataStr = trimmed.substring(6).trim();
+        if (dataStr === '[DONE]') break;
+
+        try {
+          const parsed = JSON.parse(dataStr);
+          const chunk = parsed.choices?.[0]?.delta?.content || '';
+          if (chunk) {
+            fullText += chunk;
+            const elapsedTime = (Date.now() - startTime) / 1000;
+            const currentTokens = Math.floor(fullText.length / 3.8);
+            const tokensPerSec = (currentTokens / (elapsedTime || 0.01)).toFixed(1);
+
+            if (onChunk) {
+              onChunk({
+                text: fullText,
+                isDone: false,
+                stats: {
+                  tokens: currentTokens,
+                  tokensPerSec: tokensPerSec,
+                  responseTimeMs: Math.round(elapsedTime * 1000)
+                }
+              });
+            }
+          }
+        } catch (e) {
+          // Ignore partial JSON parse errors
+        }
+      }
+    }
+  }
+
+  const finalTime = Math.max(80, Date.now() - startTime);
+  const finalTokens = Math.floor(fullText.length / 3.8);
+  const finalStats = {
+    tokens: finalTokens,
+    tokensPerSec: (finalTokens / (finalTime / 1000)).toFixed(1),
+    responseTimeMs: finalTime
+  };
+
+  if (onComplete) {
+    onComplete({
+      text: fullText,
+      isDone: true,
+      stats: finalStats
+    });
+  }
+
+  return fullText;
+}
+
 function fallbackRealtimeNLP(prompt) {
   const lowered = (prompt || '').toLowerCase().trim();
 
@@ -106,3 +276,4 @@ function fallbackRealtimeNLP(prompt) {
 
   return `### 💡 Deku AI Solution & Explanation\n\n**Topic**: *"${prompt}"*\n\n1. **Overview**: Key principles regarding this topic involve systematic analysis, structured reasoning, and practical implementation.\n2. **Analysis**: When exploring *"${prompt}"*, consider evaluating functional components, performance benchmarks, and user workflows.\n3. **Capability Notice**: You can also upload any image file to run real-time PyTorch ResNet-50 visual classification!`;
 }
+

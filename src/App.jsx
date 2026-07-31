@@ -22,14 +22,21 @@ export default function App() {
     responseTimeMs: 0
   });
 
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState(() => ({
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     temperature: 0.7,
     maxTokens: 2048,
     topP: 0.9,
     repeatPenalty: 1.1,
-    theme: theme
-  });
+    theme: theme,
+    groqApiKey: localStorage.getItem('groq_api_key') || '',
+    selectedModel: MODELS[0].id
+  }));
+
+  useEffect(() => {
+    setSettings(prev => ({ ...prev, selectedModel }));
+  }, [selectedModel]);
+
 
   const [chats, setChats] = useState(() => {
     const saved = localStorage.getItem('tinyllama_chats');
