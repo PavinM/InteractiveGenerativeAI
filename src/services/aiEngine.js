@@ -23,7 +23,7 @@ export async function generateResponse({ prompt, image, history, settings, onChu
   };
 
   try {
-    // Call Python FastAPI backend server (/api/chat)
+    // Call server-side chat API route (/api/chat)
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -40,7 +40,7 @@ export async function generateResponse({ prompt, image, history, settings, onChu
       throw new Error(`Server status ${res.status}`);
     }
   } catch (err) {
-    console.warn("Executing local Deku AI inference engine:", err);
+    console.warn("Server chat API unavailable, using built-in fallback:", err);
     fullResponseText = fallbackRealtimeNLP(prompt);
   }
 
